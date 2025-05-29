@@ -1,0 +1,116 @@
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+
+function sanitizeFolderName(name) {
+  return name
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .toLowerCase();
+}
+
+// Configuración de almacenamiento local con multer
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    console.log('Request body at destination:', req.body);  // <--- aquí chequea taskTitle
+    const taskTitle = req.body.taskTitle;
+    console.log('Task title from request:', taskTitle);
+
+    if (!taskTitle) {
+      console.error('Error: No taskTitle provided in request');
+      const uploadPath = path.join(process.cwd(), 'uploads', 'temp_files');
+      if (!fs.existsSync(uploadPath)) {
+        fs.mkdirSync(uploadPath, { recursive: true });
+        console.log('Created temp directory:', uploadPath);
+      }
+      return cb(null, uploadPath);
+    }
+
+    const sanitizedTitle = taskTitle ? sanitizeFolderName(taskTitle) : 'temp_files';
+    const uploadPath = path.join(process.cwd(), 'uploads', sanitizedTitle);
+  
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+      console.log('Created directory:', uploadPath);
+    }
+  
+    cb(null, uploadPath);
+  },
+  filename: function (req, file, cb) {
+    console.log('File being processed:', file.originalname);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const extension = path.extname(file.originalname);
+    const baseName = path.basename(file.originalname, extension);
+    const finalName = baseName + '-' + uniqueSuffix + extension;
+    console.log('Generated filename:', finalName);
+    cb(null, finalName);
+  }
+});
+
+const fileFilter = (req, file, cb) => {
+  console.log('Checking file type:', file.mimetype);
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain'
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    console.error('File type not allowed:', file.mimetype);
+    cb(new Error('Tipo de archivo no permitido'), false);
+  }
+};
+
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB
+  }
+});
+
+const handleMulterError = (err, req, res, next) => {
+  console.error('Multer error:', err);
+  
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        error: 'El archivo es demasiado grande. Máximo 10MB permitido.'
+      });
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        error: 'Demasiados archivos o campo de archivo inesperado.'
+      });
+    }
+  }
+
+  if (err.message === 'Tipo de archivo no permitido') {
+    return res.status(400).json({
+      error: 'Tipo de archivo no permitido. Solo se permiten imágenes, PDFs y documentos.'
+    });
+  }
+
+  if (err.message === 'El título de la tarea es requerido') {
+    return res.status(400).json({
+      error: 'El título de la tarea es requerido'
+    });
+  }
+
+  next(err);
+};
+
+export {
+  upload,
+  handleMulterError,
+  sanitizeFolderName
+};
