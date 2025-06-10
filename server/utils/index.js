@@ -5,11 +5,11 @@ const createJWT = (res, userId) => {
     expiresIn: "1d",
   });
 
-  res.cookie("token", token, {
+   res.cookie("token", token, {
     httpOnly: true,
-    secure: false,      
-    sameSite: "Lax",
-    maxAge: 24 * 60 * 60 * 1000
+    secure: process.env.NODE_ENV !== "development",
+    sameSite: "none",
+    maxAge: 1 * 24 * 60 * 60 * 1000, // 1 days
   });
 };
 
