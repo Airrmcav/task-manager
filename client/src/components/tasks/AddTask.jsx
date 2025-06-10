@@ -1,3 +1,5 @@
+git
+
 import { Dialog } from "@headlessui/react";
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -21,44 +23,73 @@ const LISTS = ["TODO", "IN PROGRESS", "COMPLETED"];
 const PRIORIRY = ["HIGH", "MEDIUM", "NORMAL", "LOW"];
 
 async function uploadFile(file, taskTitle, taskId) {
-  if (!file) return null;
-
   const formData = new FormData();
-  formData.append("archivo", file);
-  formData.append("taskId", taskId);
+  formData.append("file", file);
   formData.append("taskTitle", taskTitle);
+  formData.append("taskId", taskId);
 
   console.log("Enviando archivo:", file.name);
+  console.log("Enviando taskTitle:", taskTitle);
   console.log("Enviando taskId:", taskId);
 
   try {
-    const response = await fetch("https://mcav.com.mx/uploads/upload.php", {
+    // 1. Primer envío a tu API Node.js
+    const response = await fetch("https://mcav-administrador-tareas.netlify.app/api/upload", {
       method: "POST",
       body: formData,
     });
-    
+
+    console.log("Status respuesta:", response.status);
+
     if (!response.ok) {
-      throw new Error(`Error en la subida: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(
+        `Error uploading file: ${response.status} - ${errorData.error || "Unknown error"
+        }`
+      );
     }
 
-    const data = await response.json();
-    console.log("Respuesta del servidor:", data);
-    
-    if (data.success && data.filePath) {
-      return data.filePath;
-    } else {
-      throw new Error(data.message || "Error al subir el archivo");
+    const result = await response.json();
+    console.log("Upload result:", result);
+
+    const phpFormData = new FormData();
+    phpFormData.append("archivo", file);
+    phpFormData.append("taskId", taskId);
+
+    try {
+      const phpResponse = await fetch("https://mcav.com.mx/uploads/upload.php", {
+        method: "POST",
+        body: phpFormData,
+      });
+      
+      const phpData = await phpResponse.json();
+      console.log("Subida a PHP:", phpData);
+      
+      // Usar la ruta devuelta por el script PHP
+      if (phpData.success && phpData.filePath) {
+        return phpData.filePath; // Esta ruta ya tiene el formato correcto
+      }
+    } catch (phpError) {
+      console.error("Error al subir a PHP:", phpError);
     }
+    
+    // Como fallback, usar la ruta de la API Node.js
+    return taskId
+      ? `/uploads/${taskId}` // Usar solo el nombre original del archivo
+      : result.filePath;
   } catch (error) {
     console.error("Error en uploadFile:", error);
-    throw new Error(`Error al subir ${file.name}: ${error.message}`);
+    throw error;
   }
 }
 
 const AddTask = ({ open, setOpen, task }) => {
+
+
   const defaultValues = {
     title: task?.title || "",
-  
+    
+    
     // Por esto (crear la fecha con hora fija a mediodía)
     date: dateFormatter(task?.date || new Date(new Date().setHours(12, 0, 0, 0))),
     team: [],
