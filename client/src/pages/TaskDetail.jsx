@@ -118,7 +118,7 @@ const Activities = ({ activity, id, refetch, onActivityAdded }) => {
 
     try {
       // 1. First upload to Node.js API
-      const response = await fetch("http://localhost:8800/api/upload", {
+      const response = await fetch("https://mcav-administrador-tareas.netlify.app/api/upload", {
         method: "POST",
         body: formData,
       });
