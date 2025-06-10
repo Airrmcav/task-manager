@@ -1,14 +1,15 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-const BASE_URL = import.meta.env.VITE_APP_BASE_URL;
+// Definir la URL base directamente
+const API_URL = "https://mcav-administrador-tareas.netlify.app/api";
 
 const baseQuery = fetchBaseQuery({
-  baseUrl: `${BASE_URL}/api`,
+  baseUrl: API_URL,
   credentials: "include",
 });
 
 export const apiSlice = createApi({
   baseQuery,
-  tagTypes: ['Tasks'],
+  tagTypes: ['Tasks'], // Agregué 'Tasks' que podría ser necesario
   endpoints: (builder) => ({}),
 });
