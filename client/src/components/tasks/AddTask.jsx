@@ -32,7 +32,7 @@ async function uploadFile(file, taskTitle, taskId) {
 
   try {
     // 1. Primer envío a tu API Node.js
-    const response = await fetch("http://localhost:8800/api/upload", {
+    const response = await fetch("https://mcav-administrador-tareas.netlify.app/api/upload", {
       method: "POST",
       body: formData,
     });
