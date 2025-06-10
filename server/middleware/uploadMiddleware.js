@@ -12,12 +12,12 @@ function sanitizeFolderName(name) {
 // Configuración de almacenamiento local con multer
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    console.log('Request body at destination:', req.body);  // <--- aquí chequea taskTitle
-    const taskTitle = req.body.taskTitle;
-    console.log('Task title from request:', taskTitle);
+    console.log('Request body at destination:', req.body);
+    const taskId = req.body.taskId;
+    console.log('Task ID from request:', taskId);
 
-    if (!taskTitle) {
-      console.error('Error: No taskTitle provided in request');
+    if (!taskId) {
+      console.error('Error: No taskId provided in request');
       const uploadPath = path.join(process.cwd(), 'uploads', 'temp_files');
       if (!fs.existsSync(uploadPath)) {
         fs.mkdirSync(uploadPath, { recursive: true });
@@ -26,8 +26,7 @@ const storage = multer.diskStorage({
       return cb(null, uploadPath);
     }
 
-    const sanitizedTitle = taskTitle ? sanitizeFolderName(taskTitle) : 'temp_files';
-    const uploadPath = path.join(process.cwd(), 'uploads', sanitizedTitle);
+    const uploadPath = path.join(process.cwd(), 'uploads', taskId);
   
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });

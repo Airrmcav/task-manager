@@ -3,7 +3,8 @@ import mongoose, { Schema } from "mongoose";
 const taskSchema = new Schema(
   {
     title: { type: String, required: true },
-    date: { type: Date, default: new Date() },
+
+      date: { type: Date, default: Date.now },
     priority: {
       type: String,
       default: "normal",
@@ -29,7 +30,8 @@ const taskSchema = new Schema(
           ],
         },
         activity: String,
-        date: { type: Date, default: new Date() },
+
+    
         by: { type: Schema.Types.ObjectId, ref: "User" },
       },
     ],

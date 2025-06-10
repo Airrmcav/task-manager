@@ -10,6 +10,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: data,
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     duplicateTask: builder.mutation({
@@ -19,6 +20,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: {},
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     updateTask: builder.mutation({
@@ -28,6 +30,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: data,
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     getAllTask: builder.query({
@@ -36,6 +39,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         method: "GET",
         credentials: "include",
       }),
+      providesTags: ['Tasks'],
     }),
 
     getSingleTask: builder.query({
@@ -44,6 +48,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         method: "GET",
         credentials: "include",
       }),
+      providesTags: ['Tasks'],
     }),
 
     createSubTask: builder.mutation({
@@ -53,6 +58,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: data,
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     postTaskActivity: builder.mutation({
@@ -65,11 +71,13 @@ export const postApiSlice = apiSlice.injectEndpoints({
     }),
 
     trashTast: builder.mutation({
-      query: ({ id }) => ({
+      query: ({ id, isTrashed }) => ({
         url: `${TASKS_URL}/${id}`,
         method: "PUT",
+        body: { isTrashed },
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     deleteRestoreTast: builder.mutation({
@@ -95,6 +103,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: data,
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
 
     changeSubTaskStatus: builder.mutation({
@@ -104,6 +113,7 @@ export const postApiSlice = apiSlice.injectEndpoints({
         body: data,
         credentials: "include",
       }),
+      invalidatesTags: ['Tasks'],
     }),
   }),
 });

@@ -11,20 +11,17 @@ export const uploadFile = async (req, res) => {
       return res.status(400).json({ error: 'No se proporcionó ningún archivo' });
     }
 
-    const taskTitle = req.body.taskTitle || 'temp_files';
-    const sanitizedTitle = sanitizeFolderName(taskTitle);
+    const taskId = req.body.taskId || 'temp_files';
     
-    // Aquí puedes mover el archivo si quieres, pero multer ya lo guarda en la carpeta correcta
-    // Solo se envía la respuesta con info del archivo
     
-    const filePath = `/uploads/${sanitizedTitle}/${req.file.filename}`;
+    const filePath = `/uploads/${taskId}/${req.file.filename}`;
 
     res.status(200).json({
       message: 'Archivo subido exitosamente',
       filePath,
       fileName: req.file.filename,
       originalName: req.file.originalname,
-      taskFolder: sanitizedTitle
+      taskId
     });
 
   } catch (error) {
@@ -35,9 +32,8 @@ export const uploadFile = async (req, res) => {
 
 export const getTaskFiles = async (req, res) => {
   try {
-    const taskTitle = req.params.taskTitle;
-    const sanitizedTitle = sanitizeFolderName(taskTitle);
-    const uploadPath = path.join(process.cwd(), 'uploads', sanitizedTitle);
+    const taskId = req.params.taskId;
+    const uploadPath = path.join(process.cwd(), 'uploads', taskId);
 
     if (!fs.existsSync(uploadPath)) {
       return res.json({ files: [] });
@@ -45,7 +41,7 @@ export const getTaskFiles = async (req, res) => {
 
     const files = fs.readdirSync(uploadPath).map(file => ({
       name: file,
-      path: `/uploads/${sanitizedTitle}/${file}`,
+      path: `/uploads/${taskId}/${file}`,
       fullPath: path.join(uploadPath, file)
     }));
 
@@ -58,9 +54,8 @@ export const getTaskFiles = async (req, res) => {
 
 export const deleteFile = async (req, res) => {
   try {
-    const { taskTitle, fileName } = req.params;
-    const sanitizedTitle = sanitizeFolderName(taskTitle);
-    const filePath = path.join(process.cwd(), 'uploads', sanitizedTitle, fileName);
+    const { taskId, fileName } = req.params;
+    const filePath = path.join(process.cwd(), 'uploads', taskId, fileName);
 
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);

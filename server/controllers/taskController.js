@@ -296,7 +296,7 @@ const getTask = asyncHandler(async (req, res) => {
 const postTaskActivity = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { userId } = req.user;
-  const { type, activity } = req.body;
+  const { type, activity, file } = req.body;
 
   try {
     const task = await Task.findById(id);
@@ -305,8 +305,17 @@ const postTaskActivity = asyncHandler(async (req, res) => {
       type,
       activity,
       by: userId,
+      file: file || undefined, // Only include file if it exists
     };
+    
     task.activities.push(data);
+    
+    // If there's a file, add it to the assets array if not already present
+    if (file) {
+      if (!task.assets.includes(file)) {
+        task.assets.push(file);
+      }
+    }
 
     await task.save();
 
@@ -314,6 +323,7 @@ const postTaskActivity = asyncHandler(async (req, res) => {
       .status(200)
       .json({ status: true, message: "Actividad publicada exitosamente." });
   } catch (error) {
+    console.error('Error in postTaskActivity:', error);
     return res.status(400).json({ status: false, message: error.message });
   }
 });

@@ -10,19 +10,47 @@ export const formatDate = (date) => {
   return formattedDate;
 };
 
+
 export function dateFormatter(dateString) {
-  const inputDate = new Date(dateString);
-
-  if (isNaN(inputDate)) {
-    return "Invalid Date";
+  // Si no hay fecha, devolver cadena vacía
+  if (!dateString) return "";
+  
+  // Si es un string con formato YYYY-MM-DD (formato del input date)
+  if (typeof dateString === 'string' && dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    // Para inputs de tipo date, simplemente devolver el string tal cual
+    // ya que está en el formato correcto YYYY-MM-DD
+    return dateString;
   }
-
-  const year = inputDate.getFullYear();
-  const month = String(inputDate.getMonth() + 1).padStart(2, "0");
-  const day = String(inputDate.getDate()).padStart(2, "0");
-
-  const formattedDate = `${year}-${month}-${day}`;
-  return formattedDate;
+  
+  // Si es un objeto Date
+  if (dateString instanceof Date) {
+    // Asegurarnos de usar getUTCFullYear, getUTCMonth, etc. para evitar problemas de zona horaria
+    const year = dateString.getUTCFullYear();
+    const month = dateString.getUTCMonth() + 1; // getUTCMonth devuelve 0-11
+    const day = dateString.getUTCDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  
+  // Si es un string con formato ISO (con T)
+  if (typeof dateString === 'string' && dateString.includes('T')) {
+    // Extraer solo la parte de la fecha (YYYY-MM-DD)
+    return dateString.split('T')[0];
+  }
+  
+  // Cualquier otro caso, intentar crear una fecha UTC
+  try {
+    const tempDate = new Date(dateString);
+    if (!isNaN(tempDate)) {
+      const year = tempDate.getUTCFullYear();
+      const month = tempDate.getUTCMonth() + 1;
+      const day = tempDate.getUTCDate();
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  } catch (error) {
+    console.error("Error al formatear la fecha:", error);
+  }
+  
+  return "";
 }
 
 export function getInitials(fullName) {
