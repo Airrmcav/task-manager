@@ -1,5 +1,3 @@
-git
-
 import { Dialog } from "@headlessui/react";
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
