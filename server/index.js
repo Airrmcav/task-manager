@@ -23,7 +23,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001", "https://frontend-admin-trabajos.vercel.app"],
+    origin: ["http://localhost:3000", "http://localhost:3001", "https://frontend-admin-trabajos.vercel.app", "https://mcav-administrador-tareas.netlify.app/"],
     methods: ["GET", "POST", "DELETE", "PUT"],
     credentials: true,
   })
