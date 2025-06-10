@@ -1,15 +1,14 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 
-const API_URL = import.meta.env.VITE_APP_BASE_URL + "/api";
+const BASE_URL = import.meta.env.VITE_APP_BASE_URL;
 
-console.log("ENV base URL:", import.meta.env.VITE_APP_BASE_URL);
 const baseQuery = fetchBaseQuery({
-  baseUrl: API_URL,
+  baseUrl: `${BASE_URL}/api`,
   credentials: "include",
 });
 
 export const apiSlice = createApi({
   baseQuery,
-  tagTypes: [],
+  tagTypes: ['Tasks'],
   endpoints: (builder) => ({}),
 });
