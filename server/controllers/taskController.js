@@ -6,8 +6,10 @@ import User from "../models/userModel.js";
 const createTask = asyncHandler(async (req, res) => {
   try {
     const { userId } = req.user;
-    const { title, team, stage, date, priority, assets, links, description } =
+    const { title, team, stage, date, priority, assets, links, description, area, company } =
       req.body;
+    
+    console.log('Datos recibidos en el servidor:', { title, team, stage, date, priority, assets, links, description, area, company });
 
     let text = "Se te ha asignado una nueva tarea";
     if (team?.length > 1) {
@@ -28,7 +30,8 @@ const createTask = asyncHandler(async (req, res) => {
       newLinks = links?.split(",");
     }
 
-    const task = await Task.create({
+    // Crear un objeto con todos los campos explícitamente
+    const taskData = {
       title,
       team,
       stage: stage.toLowerCase(),
@@ -38,7 +41,13 @@ const createTask = asyncHandler(async (req, res) => {
       activities: activity,
       links: newLinks || [],
       description,
-    });
+      area,
+      company, // Asegurarse de que este campo se incluye
+    };
+    
+    console.log('Objeto de tarea a crear:', taskData);
+    
+    const task = await Task.create(taskData);
 
     await Notice.create({
       team,
@@ -124,8 +133,10 @@ const duplicateTask = asyncHandler(async (req, res) => {
 
 const updateTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { title, date, team, stage, priority, assets, links, description } =
+  const { title, date, team, stage, priority, assets, links, description, area, company } =
     req.body;
+    
+  console.log('Datos de actualización recibidos:', { title, date, team, stage, priority, assets, links, description, area, company });
 
   try {
     const task = await Task.findById(id);
@@ -136,6 +147,7 @@ const updateTask = asyncHandler(async (req, res) => {
       newLinks = links.split(",");
     }
 
+    // Actualizar todos los campos explícitamente
     task.title = title;
     task.date = date;
     task.priority = priority.toLowerCase();
@@ -144,6 +156,21 @@ const updateTask = asyncHandler(async (req, res) => {
     task.team = team;
     task.links = newLinks;
     task.description = description;
+    task.area = area;
+    task.company = company; // Asegurarse de que este campo se actualiza
+    
+    console.log('Objeto de tarea a actualizar:', {
+      title: task.title,
+      date: task.date,
+      priority: task.priority,
+      assets: task.assets,
+      stage: task.stage,
+      team: task.team,
+      links: task.links,
+      description: task.description,
+      area: task.area,
+      company: task.company
+    });
 
     await task.save();
 
