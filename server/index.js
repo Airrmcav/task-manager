@@ -23,7 +23,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: ["https://mcav-administrador-tareas.netlify.app", "https://68489e9d8ed35340f1f02109--mcav-administrador-tareas.netlify.app" ,"http://localhost:3000", "http://localhost:3001"],
+    origin: ["https://mcav-administrador-tareas.netlify.app","http://localhost:3000", "http://localhost:3001"],
     methods: ["GET", "POST", "DELETE", "PUT"],
     credentials: true,
   })
