@@ -3,6 +3,8 @@ import mongoose, { Schema } from "mongoose";
 const taskSchema = new Schema(
   {
     title: { type: String, required: true },
+    area: { type: String },
+    company: { type: String },
 
       date: { type: Date, default: Date.now },
     priority: {
@@ -55,3 +57,4 @@ const taskSchema = new Schema(
 const Task = mongoose.model("Task", taskSchema);
 
 export default Task;
+
