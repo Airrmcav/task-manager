@@ -9,15 +9,28 @@ const createTask = asyncHandler(async (req, res) => {
     const { title, team, stage, date, priority, assets, links, description, area, company } =
       req.body;
     
-    console.log('Datos recibidos en el servidor:', { title, team, stage, date, priority, assets, links, description, area, company });
+    // console.log('Datos recibidos en el servidor:', { title, team, stage, date, priority, assets, links, description, area, company });
+    
+    // Asegurarnos de que la fecha se maneje correctamente
+    let taskDate;
+    if (date) {
+      // Crear una fecha con la hora fija a mediodía para evitar problemas de zona horaria
+      const dateObj = new Date(date);
+      // Asegurarnos de que la hora está fija a mediodía
+      dateObj.setHours(12, 0, 0, 0);
+      taskDate = dateObj;
+      // console.log('Fecha procesada en el servidor:', taskDate.toISOString(), 'Fecha local:', taskDate.toLocaleDateString());
+    } else {
+      // Si no hay fecha, usar la fecha actual con hora fija a mediodía
+      taskDate = new Date();
+      taskDate.setHours(12, 0, 0, 0);
+    }
 
     let text = "Se te ha asignado una nueva tarea";
     if (team?.length > 1) {
       text += ` y a ${team.length - 1} personas más.`;
     }
-    text += ` La prioridad de la tarea está establecida como ${priority} y debe ser atendida en consecuencia. La fecha de la tarea es ${new Date(
-      date
-    ).toLocaleDateString("es-ES")}. ¡Gracias!`;
+    text += ` La prioridad de la tarea está establecida como ${priority} y debe ser atendida en consecuencia. La fecha de la tarea es ${taskDate.toLocaleDateString("es-ES")}. ¡Gracias!`;
 
     const activity = {
       type: "assigned",
@@ -35,7 +48,7 @@ const createTask = asyncHandler(async (req, res) => {
       title,
       team,
       stage: stage.toLowerCase(),
-      date,
+      date: taskDate, // Usar la fecha procesada
       priority: priority.toLowerCase(),
       assets,
       activities: activity,
@@ -138,6 +151,21 @@ const updateTask = asyncHandler(async (req, res) => {
     
   console.log('Datos de actualización recibidos:', { title, date, team, stage, priority, assets, links, description, area, company });
 
+  // Asegurarnos de que la fecha se maneje correctamente
+  let taskDate;
+  if (date) {
+    // Crear una fecha con la hora fija a mediodía para evitar problemas de zona horaria
+    const dateObj = new Date(date);
+    // Asegurarnos de que la hora está fija a mediodía
+    dateObj.setHours(12, 0, 0, 0);
+    taskDate = dateObj;
+    console.log('Fecha procesada en actualización:', taskDate.toISOString(), 'Fecha local:', taskDate.toLocaleDateString());
+  } else {
+    // Si no hay fecha, usar la fecha actual con hora fija a mediodía
+    taskDate = new Date();
+    taskDate.setHours(12, 0, 0, 0);
+  }
+
   try {
     const task = await Task.findById(id);
 
@@ -149,7 +177,7 @@ const updateTask = asyncHandler(async (req, res) => {
 
     // Actualizar todos los campos explícitamente
     task.title = title;
-    task.date = date;
+    task.date = taskDate; // Usar la fecha procesada
     task.priority = priority.toLowerCase();
     task.assets = assets;
     task.stage = stage.toLowerCase();
