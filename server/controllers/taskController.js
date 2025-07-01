@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import Notice from "../models/notis.js";
 import Task from "../models/taskModel.js";
 import User from "../models/userModel.js";
+import Folder from "../models/folderModel.js";
 
 const createTask = asyncHandler(async (req, res) => {
   try {
@@ -385,19 +386,44 @@ const postTaskActivity = asyncHandler(async (req, res) => {
 
 const trashTask = asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const { isTrashed } = req.body;
 
   try {
     const task = await Task.findById(id);
 
-    task.isTrashed = true;
+    if (!task) {
+      return res.status(404).json({
+        status: false,
+        message: "Tarea no encontrada.",
+      });
+    }
+
+    // Verificar si isTrashed es "trash" (desde el cliente) o true/false
+    if (isTrashed === "trash") {
+      task.isTrashed = true;
+    } else {
+      task.isTrashed = Boolean(isTrashed);
+    }
 
     await task.save();
 
+    // Si la tarea se está moviendo a la papelera, también la eliminamos de todas las carpetas
+    if (task.isTrashed) {
+      // Eliminar la tarea de todas las carpetas que la contienen
+      await Folder.updateMany(
+        { tasks: id },
+        { $pull: { tasks: id } }
+      );
+    }
+
     res.status(200).json({
       status: true,
-      message: `Tarea eliminada exitosamente.`,
+      message: task.isTrashed 
+        ? `Tarea movida a la papelera exitosamente.`
+        : `Tarea restaurada exitosamente.`,
     });
   } catch (error) {
+    console.error("Error en trashTask:", error);
     return res.status(400).json({ status: false, message: error.message });
   }
 });
@@ -408,8 +434,28 @@ const deleteRestoreTask = asyncHandler(async (req, res) => {
     const { actionType } = req.query;
 
     if (actionType === "delete") {
+      // Primero, eliminar la tarea de todas las carpetas que la contienen
+      await Folder.updateMany(
+        { tasks: id },
+        { $pull: { tasks: id } }
+      );
+      
+      // Luego eliminar la tarea
       await Task.findByIdAndDelete(id);
     } else if (actionType === "deleteAll") {
+      // Obtener todas las tareas que están en la papelera
+      const trashedTasks = await Task.find({ isTrashed: true });
+      const trashedTaskIds = trashedTasks.map(task => task._id);
+      
+      // Eliminar todas las tareas de la papelera de todas las carpetas
+      if (trashedTaskIds.length > 0) {
+        await Folder.updateMany(
+          { tasks: { $in: trashedTaskIds } },
+          { $pull: { tasks: { $in: trashedTaskIds } } }
+        );
+      }
+      
+      // Eliminar todas las tareas de la papelera
       await Task.deleteMany({ isTrashed: true });
     } else if (actionType === "restore") {
       const resp = await Task.findById(id);
@@ -429,6 +475,7 @@ const deleteRestoreTask = asyncHandler(async (req, res) => {
       message: `Operación realizada exitosamente.`,
     });
   } catch (error) {
+    console.error("Error en deleteRestoreTask:", error);
     return res.status(400).json({ status: false, message: error.message });
   }
 });
@@ -505,6 +552,92 @@ const dashboardStatistics = asyncHandler(async (req, res) => {
   }
 });
 
+// Actualizar el estado de un archivo en una tarea
+const updateFileStatus = asyncHandler(async (req, res) => {
+  try {
+    const { taskId, fileUrl, status } = req.body;
+    const { userId } = req.user;
+
+    if (!taskId || !fileUrl || !status) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Se requiere el ID de la tarea, la URL del archivo y el estado." 
+      });
+    }
+
+    // Verificar que el estado sea válido
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Estado no válido. Debe ser 'pending', 'approved' o 'rejected'." 
+      });
+    }
+
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Tarea no encontrada." 
+      });
+    }
+
+    // Verificar si el archivo existe en la tarea
+    if (!task.assets.includes(fileUrl)) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Archivo no encontrado en la tarea." 
+      });
+    }
+
+    // Buscar si ya existe una actividad para este archivo
+    const existingActivityIndex = task.activities.findIndex(
+      (act) => act.file === fileUrl && act.type === 'file_status_changed'
+    );
+
+    let statusText = "";
+    switch (status) {
+      case "pending":
+        statusText = "en proceso";
+        break;
+      case "approved":
+        statusText = "aprobado";
+        break;
+      case "rejected":
+        statusText = "rechazado";
+        break;
+    }
+
+    const activityText = `El archivo ${fileUrl.split('/').pop()} ha sido marcado como ${statusText}`;
+
+    if (existingActivityIndex !== -1) {
+      // Actualizar la actividad existente
+      task.activities[existingActivityIndex].status = status;
+      task.activities[existingActivityIndex].activity = activityText;
+      task.activities[existingActivityIndex].by = userId;
+    } else {
+      // Crear una nueva actividad
+      task.activities.push({
+        type: "file_status_changed",
+        activity: activityText,
+        file: fileUrl,
+        status: status,
+        by: userId,
+      });
+    }
+
+    await task.save();
+
+    res.status(200).json({ 
+      status: true, 
+      message: `Estado del archivo actualizado a ${statusText}.` 
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+});
+
 export {
   createSubTask,
   createTask,
@@ -518,4 +651,5 @@ export {
   updateSubTaskStage,
   updateTask,
   updateTaskStage,
+  updateFileStatus,
 };
