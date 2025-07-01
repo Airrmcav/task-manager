@@ -28,11 +28,16 @@ const taskSchema = new Schema(
             "bug",
             "completed",
             "commented",
+            "file_status_changed",
           ],
         },
         activity: String,
-
-    
+        file: String,
+        status: {
+          type: String,
+          enum: ["pending", "approved", "rejected"],
+          default: "pending"
+        },
         by: { type: Schema.Types.ObjectId, ref: "User" },
       },
     ],
