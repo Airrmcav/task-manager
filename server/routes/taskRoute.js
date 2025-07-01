@@ -12,6 +12,7 @@ import {
   updateSubTaskStage,
   updateTask,
   updateTaskStage,
+  updateFileStatus,
 } from "../controllers/taskController.js";
 import { isAdminRoute, protectRoute } from "../middleware/authMiddleware.js";
 
@@ -33,6 +34,7 @@ router.put(
   protectRoute,
   updateSubTaskStage
 );
+router.put("/update-file-status", protectRoute, updateFileStatus);
 router.put("/:id", protectRoute, isAdminRoute, trashTask);
 
 router.delete(
