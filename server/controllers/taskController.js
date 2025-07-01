@@ -590,11 +590,6 @@ const updateFileStatus = asyncHandler(async (req, res) => {
       });
     }
 
-    // Buscar si ya existe una actividad para este archivo
-    const existingActivityIndex = task.activities.findIndex(
-      (act) => act.file === fileUrl && act.type === 'file_status_changed'
-    );
-
     let statusText = "";
     switch (status) {
       case "pending":
@@ -610,21 +605,16 @@ const updateFileStatus = asyncHandler(async (req, res) => {
 
     const activityText = `El archivo ${fileUrl.split('/').pop()} ha sido marcado como ${statusText}`;
 
-    if (existingActivityIndex !== -1) {
-      // Actualizar la actividad existente
-      task.activities[existingActivityIndex].status = status;
-      task.activities[existingActivityIndex].activity = activityText;
-      task.activities[existingActivityIndex].by = userId;
-    } else {
-      // Crear una nueva actividad
-      task.activities.push({
-        type: "file_status_changed",
-        activity: activityText,
-        file: fileUrl,
-        status: status,
-        by: userId,
-      });
-    }
+    // Crear una nueva actividad siempre para mantener un historial
+    // y asegurarse de que la actividad más reciente tenga el estado correcto
+    task.activities.push({
+      type: "file_status_changed",
+      activity: activityText,
+      file: fileUrl,
+      status: status,
+      by: userId,
+      date: new Date() // Agregar fecha explícita para asegurar el orden correcto
+    });
 
     await task.save();
 
