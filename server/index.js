@@ -20,9 +20,10 @@ const __dirname = path.dirname(__filename);
 const port = process.env.PORT || 5000;
 
 const app = express();
+
 app.use(
   cors({
-    origin: ["https://mcav-administrador-tareas.netlify.app", "http://localhost:3000", "http://localhost:3001"],
+    origin: ["http://localhost:3000", "http://localhost:3001", "https://mcav-administrador-tareas.netlify.app"],
     methods: ["GET", "POST", "DELETE", "PUT"],
     credentials: true,
   })
