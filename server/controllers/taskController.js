@@ -558,6 +558,7 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     const { taskId, fileUrl, status } = req.body;
     const { userId } = req.user;
 
+    // Validación rápida de parámetros
     if (!taskId || !fileUrl || !status) {
       return res.status(400).json({ 
         status: false, 
@@ -573,6 +574,7 @@ const updateFileStatus = asyncHandler(async (req, res) => {
       });
     }
 
+    // Buscar la tarea por ID sin poblar inicialmente para mayor velocidad
     const task = await Task.findById(taskId);
 
     if (!task) {
@@ -604,26 +606,54 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     }
 
     const activityText = `El archivo ${fileUrl.split('/').pop()} ha sido marcado como ${statusText}`;
-
-    // Crear una nueva actividad siempre para mantener un historial
-    // y asegurarse de que la actividad más reciente tenga el estado correcto
-    task.activities.push({
+    
+    // Crear una nueva actividad
+    const newActivity = {
       type: "file_status_changed",
       activity: activityText,
       file: fileUrl,
       status: status,
       by: userId,
-      date: new Date() // Agregar fecha explícita para asegurar el orden correcto
-    });
+      date: new Date()
+    };
+    
+    // Añadir la nueva actividad al principio del array
+    task.activities.unshift(newActivity);
 
+    // Actualizar el estado de la tarea según el estado del archivo
+    if (status === "approved" && task.stage !== "completed") {
+      task.stage = "completed";
+    } else if ((status === "rejected" || status === "pending") && task.stage === "completed") {
+      task.stage = "in progress";
+    }
+
+    // Guardar la tarea con la nueva actividad y el estado actualizado
     await task.save();
 
+    // Respuesta rápida sin poblar toda la tarea para mejorar el rendimiento
     res.status(200).json({ 
       status: true, 
-      message: `Estado del archivo actualizado a ${statusText}.` 
+      message: `Estado del archivo actualizado a ${statusText}.`,
+      fileStatus: status,
+      taskStage: task.stage
     });
+    
+    // Opcionalmente, poblar la tarea en segundo plano si es necesario para otras operaciones
+    // pero no esperar a que termine para responder al cliente
+    Task.findById(task._id)
+      .populate({
+        path: "activities.by",
+        select: "name"
+      })
+      .then(() => {
+        // No es necesario hacer nada con el resultado
+      })
+      .catch(err => {
+        console.error("Error al poblar la tarea en segundo plano:", err);
+      });
+      
   } catch (error) {
-    console.error(error);
+    console.error("Error al actualizar el estado del archivo:", error);
     return res.status(500).json({ status: false, message: error.message });
   }
 });
