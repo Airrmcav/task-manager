@@ -37,11 +37,16 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     console.log('File being processed:', file.originalname);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    // Usar la fecha proporcionada en la solicitud o la fecha actual si no se proporciona
+    const fileDate = req.body.fileDate ? new Date(req.body.fileDate) : new Date();
+    const timestamp = fileDate.getTime();
+    const uniqueSuffix = timestamp + '-' + Math.round(Math.random() * 1e9);
     const extension = path.extname(file.originalname);
     const baseName = path.basename(file.originalname, extension);
     const finalName = baseName + '-' + uniqueSuffix + extension;
-    console.log('Generated filename:', finalName);
+    console.log('Generated filename with date:', finalName);
+    // Guardar la fecha original del archivo en la solicitud para su uso posterior
+    req.fileOriginalDate = fileDate;
     cb(null, finalName);
   }
 });
