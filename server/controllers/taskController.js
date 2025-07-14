@@ -3,6 +3,44 @@ import Notice from "../models/notis.js";
 import Task from "../models/taskModel.js";
 import User from "../models/userModel.js";
 import Folder from "../models/folderModel.js";
+import fs from 'fs';
+import path from 'path';
+
+// Función auxiliar para verificar el estado de los archivos en una colección
+const checkFilesStatus = (assets, fileStatuses) => {
+  console.log('Verificando si todos los archivos están aprobados...');
+  
+  // Verificar si hay algún archivo pendiente o rechazado
+  let hasPendingOrRejected = false;
+  let allApproved = true;
+  
+  // Recorrer todos los archivos para verificar su estado
+  for (const asset of assets) {
+    // Convertir cada asset a su clave segura correspondiente
+    const assetSafeKey = asset.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
+    const fileStatus = fileStatuses[assetSafeKey];
+    console.log(`Archivo: ${asset}, Clave segura: ${assetSafeKey}, Estado: ${fileStatus}`);
+    
+    // Si el archivo está pendiente o rechazado, marcar la bandera
+    if (fileStatus === "pending" || fileStatus === "rejected") {
+      hasPendingOrRejected = true;
+      allApproved = false;
+      break; // No es necesario seguir verificando
+    }
+    
+    // Si el archivo no tiene estado, considerarlo como pendiente
+    if (!fileStatus) {
+      hasPendingOrRejected = true;
+      allApproved = false;
+      break; // No es necesario seguir verificando
+    }
+  }
+  
+  console.log('¿Hay archivos pendientes o rechazados?', hasPendingOrRejected);
+  console.log('¿Todos los archivos están aprobados?', allApproved);
+  
+  return { hasPendingOrRejected, allApproved };
+};
 
 const createTask = asyncHandler(async (req, res) => {
   try {
@@ -234,6 +272,16 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
   try {
     const { taskId, subTaskId } = req.params;
     const { status } = req.body;
+    
+    console.log('updateSubTaskStage - Parámetros recibidos:', { taskId, subTaskId, status });
+    
+    if (!taskId || taskId === 'undefined') {
+      return res.status(400).json({ status: false, message: 'ID de tarea inválido o no proporcionado' });
+    }
+    
+    if (!subTaskId || subTaskId === 'undefined') {
+      return res.status(400).json({ status: false, message: 'ID de subtarea inválido o no proporcionado' });
+    }
 
     await Task.findOneAndUpdate(
       {
@@ -260,7 +308,7 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
 });
 
 const createSubTask = asyncHandler(async (req, res) => {
-  const { title, tag, date } = req.body;
+  const { title, tag, date, file } = req.body;
   const { id } = req.params;
 
   try {
@@ -269,11 +317,17 @@ const createSubTask = asyncHandler(async (req, res) => {
       date,
       tag,
       isCompleted: false,
+      assets: file ? [file] : [],
     };
 
     const task = await Task.findById(id);
 
     task.subTasks.push(newSubTask);
+
+    // Si hay un archivo, también lo agregamos a los assets de la tarea principal
+    if (file && !task.assets.includes(file)) {
+      task.assets.push(file);
+    }
 
     await task.save();
 
@@ -380,6 +434,55 @@ const postTaskActivity = asyncHandler(async (req, res) => {
       .json({ status: true, message: "Actividad publicada exitosamente." });
   } catch (error) {
     console.error('Error in postTaskActivity:', error);
+    return res.status(400).json({ status: false, message: error.message });
+  }
+});
+
+const addFileToSubTask = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { subTaskId, file } = req.body;
+
+  try {
+    const task = await Task.findById(id);
+    
+    if (!task) {
+      return res.status(404).json({
+        status: false,
+        message: "Tarea no encontrada.",
+      });
+    }
+
+    // Encontrar la subtarea por su ID
+    const subTask = task.subTasks.id(subTaskId);
+    
+    if (!subTask) {
+      return res.status(404).json({
+        status: false,
+        message: "Sub-tarea no encontrada.",
+      });
+    }
+
+    // Inicializar el array de assets si no existe
+    if (!subTask.assets) {
+      subTask.assets = [];
+    }
+
+    // Agregar el archivo a la subtarea
+    subTask.assets.push(file);
+
+    // También agregar el archivo a los assets de la tarea principal si no existe
+    if (!task.assets.includes(file)) {
+      task.assets.push(file);
+    }
+
+    await task.save();
+
+    res.status(200).json({
+      status: true,
+      message: "Archivo agregado a la sub-tarea exitosamente.",
+    });
+  } catch (error) {
+    console.error('Error en addFileToSubTask:', error);
     return res.status(400).json({ status: false, message: error.message });
   }
 });
@@ -555,6 +658,9 @@ const dashboardStatistics = asyncHandler(async (req, res) => {
 // Actualizar el estado de un archivo en una tarea
 const updateFileStatus = asyncHandler(async (req, res) => {
   try {
+    console.log('Datos recibidos en updateFileStatus:', req.body);
+    console.log('Usuario en la solicitud:', req.user);
+    
     const { taskId, fileUrl, status } = req.body;
     const { userId } = req.user;
 
@@ -574,6 +680,9 @@ const updateFileStatus = asyncHandler(async (req, res) => {
       });
     }
 
+    // Imprimir la URL del archivo para depuración
+    console.log('URL del archivo recibida en updateFileStatus:', fileUrl);
+
     // Buscar la tarea por ID sin poblar inicialmente para mayor velocidad
     const task = await Task.findById(taskId);
 
@@ -591,6 +700,22 @@ const updateFileStatus = asyncHandler(async (req, res) => {
         message: "Archivo no encontrado en la tarea." 
       });
     }
+    
+    // Inicializar fileStatuses como un objeto plano si no existe
+    if (!task.fileStatuses) {
+      task.fileStatuses = {};
+    }
+    
+    // Usar una clave segura para MongoDB reemplazando puntos y otros caracteres problemáticos
+    // Esto evita el error "Mongoose maps do not support keys that contain '.'"
+    console.log('Creando clave segura para:', fileUrl);
+    const safeKey = fileUrl.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
+    console.log('Clave segura creada:', safeKey);
+    
+    // Tratar fileStatuses como un objeto plano en lugar de un Map
+    console.log('Estado actual de fileStatuses:', task.fileStatuses);
+    task.fileStatuses[safeKey] = status;
+    console.log('Nuevo estado de fileStatuses:', task.fileStatuses);
 
     let statusText = "";
     switch (status) {
@@ -626,7 +751,20 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     } else if ((status === "rejected" || status === "pending") && task.stage === "completed") {
       task.stage = "in progress";
     }
+    
+    // Verificar si todos los archivos están aprobados
+    if (status === "approved") {
+      const { allApproved } = checkFilesStatus(task.assets, task.fileStatuses);
+      
+      if (allApproved) {
+        task.stage = "completed";
+        console.log('Tarea marcada como completada');
+      }
+    }
 
+    // Marcar el documento como modificado para asegurar que Mongoose guarde los cambios
+    task.markModified('fileStatuses');
+    
     // Guardar la tarea con la nueva actividad y el estado actualizado
     await task.save();
 
@@ -658,18 +796,249 @@ const updateFileStatus = asyncHandler(async (req, res) => {
   }
 });
 
+// Actualizar el estado de un archivo en una subtarea
+const updateSubTaskFileStatus = asyncHandler(async (req, res) => {
+  try {
+    console.log('Datos recibidos en updateSubTaskFileStatus:', req.body);
+    console.log('Usuario en la solicitud:', req.user);
+    
+    const { taskId, subTaskId, fileUrl, status } = req.body;
+    const { userId } = req.user;
+
+    // Validación rápida de parámetros
+    if (!taskId || !subTaskId || !fileUrl || !status) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Se requiere el ID de la tarea, ID de la subtarea, la URL del archivo y el estado." 
+      });
+    }
+
+    // Verificar que el estado sea válido
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Estado no válido. Debe ser 'pending', 'approved' o 'rejected'." 
+      });
+    }
+
+    // Imprimir la URL del archivo para depuración
+    console.log('URL del archivo recibida:', fileUrl);
+
+    // Buscar la tarea por ID
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Tarea no encontrada." 
+      });
+    }
+
+    // Encontrar la subtarea
+    const subTask = task.subTasks.id(subTaskId);
+    
+    if (!subTask) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Sub-tarea no encontrada." 
+      });
+    }
+
+    // Verificar si el archivo existe en la subtarea
+    if (!subTask.assets || !subTask.assets.includes(fileUrl)) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Archivo no encontrado en la sub-tarea." 
+      });
+    }
+
+    // Inicializar fileStatuses como un objeto plano si no existe
+    if (!subTask.fileStatuses) {
+      subTask.fileStatuses = {};
+    }
+    
+    // Usar una clave segura para MongoDB reemplazando puntos y otros caracteres problemáticos
+    // Esto evita el error "Mongoose maps do not support keys that contain '.'"
+    console.log('Creando clave segura para:', fileUrl);
+    const safeKey = fileUrl.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
+    console.log('Clave segura creada:', safeKey);
+    
+    // Tratar fileStatuses como un objeto plano en lugar de un Map
+    // Esto es más compatible con MongoDB y evita problemas de serialización
+    if (!subTask.fileStatuses) {
+      subTask.fileStatuses = {};
+    }
+    
+    console.log('Estado actual de fileStatuses:', subTask.fileStatuses);
+    subTask.fileStatuses[safeKey] = status;
+    console.log('Nuevo estado de fileStatuses:', subTask.fileStatuses);
+
+    let statusText = "";
+    switch (status) {
+      case "pending":
+        statusText = "en proceso";
+        break;
+      case "approved":
+        statusText = "aprobado";
+        break;
+      case "rejected":
+        statusText = "rechazado";
+        break;
+    }
+
+    const activityText = `El archivo ${fileUrl.split('/').pop()} de la sub-tarea "${subTask.title}" ha sido marcado como ${statusText}`;
+    
+    // Crear una nueva actividad
+    const newActivity = {
+      type: "file_status_changed",
+      activity: activityText,
+      file: fileUrl,
+      status: status,
+      by: userId,
+      date: new Date()
+    };
+    
+    // Añadir la nueva actividad al principio del array
+    task.activities.unshift(newActivity);
+
+    // Actualizar el estado de la subtarea según el estado de sus archivos
+    if (subTask.assets && subTask.assets.length > 0) {
+      const { hasPendingOrRejected, allApproved } = checkFilesStatus(subTask.assets, subTask.fileStatuses);
+      
+      // Si hay archivos pendientes o rechazados, marcar la subtarea como no completada
+      if (hasPendingOrRejected) {
+        subTask.isCompleted = false;
+        console.log('Subtarea marcada como no completada porque hay archivos pendientes o rechazados');
+      } else {
+        // Si todos los archivos están aprobados, marcar la subtarea como completada
+        subTask.isCompleted = true;
+        console.log('Subtarea marcada como completada automáticamente porque todos los archivos restantes están aprobados');
+      }
+    } else if (subTask.assets.length === 0) {
+      // Si no quedan archivos, mantener el estado actual de la subtarea
+      console.log('No quedan archivos en la subtarea, manteniendo el estado actual:', subTask.isCompleted);
+    }
+    
+    // Marcar el documento como modificado para asegurar que Mongoose guarde los cambios
+    task.markModified('subTasks');
+    
+    // Guardar la tarea con la nueva actividad y el estado actualizado
+    await task.save();
+
+    // Respuesta rápida sin poblar toda la tarea para mejorar el rendimiento
+    res.status(200).json({ 
+      status: true, 
+      message: `Estado del archivo actualizado a ${statusText}.`,
+      fileStatus: status,
+      subTaskCompleted: subTask.isCompleted
+    });
+    
+  } catch (error) {
+    console.error("Error al actualizar el estado del archivo de la subtarea:", error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+});
+
+// Eliminar un archivo de una subtarea
+const removeSubTaskFile = asyncHandler(async (req, res) => {
+  const { taskId, subTaskId, fileUrl } = req.body;
+  const { userId } = req.user;
+
+  try {
+    // Validación rápida de parámetros
+    if (!taskId || !subTaskId || !fileUrl) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Se requiere el ID de la tarea, ID de la subtarea y la URL del archivo." 
+      });
+    }
+
+    // Buscar la tarea por ID
+    const task = await Task.findById(taskId);
+
+    if (!task) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Tarea no encontrada." 
+      });
+    }
+
+    // Encontrar la subtarea
+    const subTask = task.subTasks.id(subTaskId);
+    
+    if (!subTask) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Sub-tarea no encontrada." 
+      });
+    }
+
+    // Verificar si el archivo existe en la subtarea
+    if (!subTask.assets || !subTask.assets.includes(fileUrl)) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "Archivo no encontrado en la sub-tarea." 
+      });
+    }
+
+    // Eliminar el archivo de la subtarea
+    subTask.assets = subTask.assets.filter(asset => asset !== fileUrl);
+    
+    // Si el archivo tenía un estado, eliminarlo también
+    if (subTask.fileStatuses) {
+      const safeKey = fileUrl.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
+      delete subTask.fileStatuses[safeKey];
+    }
+
+    // Crear una nueva actividad
+    const activityText = `El archivo ${fileUrl.split('/').pop()} ha sido eliminado de la sub-tarea "${subTask.title}"`;
+    
+    const newActivity = {
+      type: "file_removed",
+      activity: activityText,
+      file: fileUrl,
+      by: userId,
+      date: new Date()
+    };
+    
+    // Añadir la nueva actividad al principio del array
+    task.activities.unshift(newActivity);
+
+    // Marcar el documento como modificado para asegurar que Mongoose guarde los cambios
+    task.markModified('subTasks');
+    
+    // Guardar la tarea con la nueva actividad y el estado actualizado
+    await task.save();
+
+    // Respuesta rápida sin poblar toda la tarea para mejorar el rendimiento
+    res.status(200).json({ 
+      status: true, 
+      message: "Archivo eliminado de la sub-tarea exitosamente."
+    });
+    
+  } catch (error) {
+    console.error("Error al eliminar el archivo de la subtarea:", error);
+    return res.status(500).json({ status: false, message: error.message });
+  }
+});
+
+// Exportar todas las funciones del controlador
 export {
-  createSubTask,
   createTask,
-  dashboardStatistics,
-  deleteRestoreTask,
-  duplicateTask,
-  getTask,
   getTasks,
-  postTaskActivity,
-  trashTask,
-  updateSubTaskStage,
+  getTask,
   updateTask,
   updateTaskStage,
+  createSubTask,
+  updateSubTaskStage,
+  postTaskActivity,
+  dashboardStatistics,
+  trashTask,
+  deleteRestoreTask,
+  duplicateTask,
   updateFileStatus,
+  updateSubTaskFileStatus,
+  addFileToSubTask,
+  removeSubTaskFile
 };
+      
