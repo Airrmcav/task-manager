@@ -13,6 +13,9 @@ import {
   updateTask,
   updateTaskStage,
   updateFileStatus,
+  updateSubTaskFileStatus,
+  addFileToSubTask,
+  removeSubTaskFile,
 } from "../controllers/taskController.js";
 import { isAdminRoute, protectRoute } from "../middleware/authMiddleware.js";
 
@@ -35,6 +38,11 @@ router.put(
   updateSubTaskStage
 );
 router.put("/update-file-status", protectRoute, updateFileStatus);
+router.put("/update-subtask-file-status", protectRoute, updateSubTaskFileStatus);
+router.put("/add-file-to-subtask/:id", protectRoute, addFileToSubTask);
+// Ruta para eliminar un archivo de una subtarea
+// Esta ruta recibe: taskId, subTaskId y fileUrl en el body
+router.put("/remove-subtask-file", protectRoute, removeSubTaskFile);
 router.put("/:id", protectRoute, isAdminRoute, trashTask);
 
 router.delete(
