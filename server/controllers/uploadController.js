@@ -16,11 +16,15 @@ export const uploadFile = async (req, res) => {
     
     const filePath = `/uploads/${taskId}/${req.file.filename}`;
 
+    // Obtener la fecha original del archivo (establecida en el middleware)
+    const fileDate = req.fileOriginalDate || new Date();
+
     res.status(200).json({
       message: 'Archivo subido exitosamente',
       filePath,
       fileName: req.file.filename,
       originalName: req.file.originalname,
+      fileDate: fileDate.toISOString(), // Incluir la fecha original del archivo
       taskId
     });
 
