@@ -16,6 +16,11 @@ const taskSchema = new Schema(
       default: "todo",
       enum: ["todo", "in progress", "completed"],
     },
+    // Almacena el estado de los archivos de la tarea principal
+    fileStatuses: {
+      type: Object,
+      default: () => ({})
+    },
     activities: [
       {
         type: {
@@ -29,6 +34,7 @@ const taskSchema = new Schema(
             "completed",
             "commented",
             "file_status_changed",
+            "file_removed",
           ],
         },
         activity: String,
@@ -48,6 +54,11 @@ const taskSchema = new Schema(
         date: Date,
         tag: String,
         isCompleted: Boolean,
+        assets: [String], // Archivos adjuntos a la subtarea
+        fileStatuses: {
+          type: Object,
+          default: () => ({})
+        }
       },
     ],
     description: String,
