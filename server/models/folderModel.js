@@ -8,7 +8,12 @@ const folderSchema = new Schema(
     area: { type: String, default: "Sistemas" },
     team: [{ type: Schema.Types.ObjectId, ref: "User" }],
     tasks: [{ type: Schema.Types.ObjectId, ref: "Task" }],
-    isTrashed: { type: Boolean, default: false }, 
+    isTrashed: { type: Boolean, default: false },
+    status: {
+      type: String,
+      default: "in progress",
+      enum: ["todo", "in progress", "completed"],
+    }, 
   },
   { timestamps: true }
 );
