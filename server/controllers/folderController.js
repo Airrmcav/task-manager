@@ -1,5 +1,52 @@
 import asyncHandler from "express-async-handler";
 import Folder from "../models/folderModel.js";
+import Task from "../models/taskModel.js";
+import mongoose from "mongoose";
+
+// Función auxiliar para verificar si todas las tareas de una carpeta están completadas
+const checkFolderTasksStatus = async (folderId) => {
+  try {
+    console.log('Verificando estado de las tareas en la carpeta:', folderId);
+    
+    // Obtener la carpeta con sus tareas
+    const folder = await Folder.findById(folderId);
+    
+    if (!folder || !folder.tasks || folder.tasks.length === 0) {
+      console.log('La carpeta no existe o no tiene tareas');
+      return false;
+    }
+    
+    // Obtener todas las tareas de la carpeta
+    const tasks = await Task.find({ _id: { $in: folder.tasks } });
+    
+    if (tasks.length === 0) {
+      console.log('No se encontraron tareas para esta carpeta');
+      return false;
+    }
+    
+    // Verificar si todas las tareas están completadas
+    const allTasksCompleted = tasks.every(task => task.stage === 'completed');
+    console.log('¿Todas las tareas están completadas?', allTasksCompleted);
+    
+    // Actualizar el estado de la carpeta si es necesario
+    if (allTasksCompleted && folder.status !== 'completed') {
+      console.log('Actualizando estado de la carpeta a "completed"');
+      folder.status = 'completed';
+      await folder.save();
+      return true;
+    } else if (!allTasksCompleted && folder.status === 'completed') {
+      console.log('Actualizando estado de la carpeta a "in progress"');
+      folder.status = 'in progress';
+      await folder.save();
+      return false;
+    }
+    
+    return allTasksCompleted;
+  } catch (error) {
+    console.error('Error al verificar el estado de las tareas de la carpeta:', error);
+    return false;
+  }
+};
 
 // @desc    Create a new folder
 // @route   POST /api/folder/create
@@ -235,6 +282,9 @@ const addTaskToFolder = asyncHandler(async (req, res) => {
 
     folder.tasks.push(taskId);
     await folder.save();
+    
+    // Verificar si todas las tareas de la carpeta están completadas después de agregar la nueva tarea
+    await checkFolderTasksStatus(id);
 
     res.status(200).json({
       status: true,
@@ -273,6 +323,9 @@ const removeTaskFromFolder = asyncHandler(async (req, res) => {
       (task) => task.toString() !== taskId.toString()
     );
     await folder.save();
+    
+    // Verificar si todas las tareas de la carpeta están completadas después de eliminar la tarea
+    await checkFolderTasksStatus(id);
 
     res.status(200).json({
       status: true,
