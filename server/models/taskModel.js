@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { VALID_ACTIVITY_TYPES, VALID_FILE_STATUSES } from "../utils/constants.js";
 
 const taskSchema = new Schema(
   {
@@ -26,22 +27,13 @@ const taskSchema = new Schema(
         type: {
           type: String,
           default: "assigned",
-          enum: [
-            "assigned",
-            "started",
-            "in progress",
-            "bug",
-            "completed",
-            "commented",
-            "file_status_changed",
-            "file_removed",
-          ],
+          enum: VALID_ACTIVITY_TYPES,
         },
         activity: String,
         file: String,
         status: {
           type: String,
-          enum: ["pending", "approved", "rejected"],
+          enum: VALID_FILE_STATUSES,
           default: "pending"
         },
         by: { type: Schema.Types.ObjectId, ref: "User" },
