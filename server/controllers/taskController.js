@@ -2,9 +2,55 @@ import asyncHandler from "express-async-handler";
 import Notice from "../models/notis.js";
 import Task from "../models/taskModel.js";
 import User from "../models/userModel.js";
+import { VALID_ACTIVITY_TYPES, ACTIVITY_TYPES, VALID_FILE_STATUSES, FILE_STATUSES } from "../utils/constants.js";
 import Folder from "../models/folderModel.js";
 import fs from 'fs';
 import path from 'path';
+
+// Función auxiliar para verificar si todas las tareas de una carpeta están completadas
+const checkFolderTasksStatus = async (folderId) => {
+  try {
+    console.log('Verificando estado de las tareas en la carpeta:', folderId);
+    
+    // Obtener la carpeta con sus tareas
+    const folder = await Folder.findById(folderId);
+    
+    if (!folder || !folder.tasks || folder.tasks.length === 0) {
+      console.log('La carpeta no existe o no tiene tareas');
+      return false;
+    }
+    
+    // Obtener todas las tareas de la carpeta
+    const tasks = await Task.find({ _id: { $in: folder.tasks } });
+    
+    if (tasks.length === 0) {
+      console.log('No se encontraron tareas para esta carpeta');
+      return false;
+    }
+    
+    // Verificar si todas las tareas están completadas
+    const allTasksCompleted = tasks.every(task => task.stage === 'completed');
+    console.log('¿Todas las tareas están completadas?', allTasksCompleted);
+    
+    // Actualizar el estado de la carpeta si es necesario
+    if (allTasksCompleted && folder.status !== 'completed') {
+      console.log('Actualizando estado de la carpeta a "completed"');
+      folder.status = 'completed';
+      await folder.save();
+      return true;
+    } else if (!allTasksCompleted && folder.status === 'completed') {
+      console.log('Actualizando estado de la carpeta a "in progress"');
+      folder.status = 'in progress';
+      await folder.save();
+      return false;
+    }
+    
+    return allTasksCompleted;
+  } catch (error) {
+    console.error('Error al verificar el estado de las tareas de la carpeta:', error);
+    return false;
+  }
+};
 
 // Función auxiliar para verificar el estado de los archivos en una colección
 const checkFilesStatus = (assets, fileStatuses) => {
@@ -19,7 +65,7 @@ const checkFilesStatus = (assets, fileStatuses) => {
     // Convertir cada asset a su clave segura correspondiente
     const assetSafeKey = asset.replace(/\./g, '_dot_').replace(/\//g, '_slash_');
     const fileStatus = fileStatuses[assetSafeKey];
-    console.log(`Archivo: ${asset}, Clave segura: ${assetSafeKey}, Estado: ${fileStatus}`);
+    // console.log(`Archivo: ${asset}, Clave segura: ${assetSafeKey}, Estado: ${fileStatus}`);
     
     // Si el archivo está pendiente o rechazado, marcar la bandera
     if (fileStatus === "pending" || fileStatus === "rejected") {
@@ -72,7 +118,7 @@ const createTask = asyncHandler(async (req, res) => {
     text += ` La prioridad de la tarea está establecida como ${priority} y debe ser atendida en consecuencia. La fecha de la tarea es ${taskDate.toLocaleDateString("es-ES")}. ¡Gracias!`;
 
     const activity = {
-      type: "assigned",
+      type: ACTIVITY_TYPES.ASSIGNED,
       activity: text,
       by: userId,
     };
@@ -148,7 +194,7 @@ const duplicateTask = asyncHandler(async (req, res) => {
       ).toDateString()}. Thank you!!!`;
 
     const activity = {
-      type: "assigned",
+      type: ACTIVITY_TYPES.ASSIGNED,
       activity: text,
       by: userId,
     };
@@ -259,6 +305,18 @@ const updateTaskStage = asyncHandler(async (req, res) => {
     task.stage = stage.toLowerCase();
 
     await task.save();
+    
+    // Buscar si la tarea pertenece a alguna carpeta y actualizar el estado de la carpeta si es necesario
+    const folders = await Folder.find({ tasks: id });
+    
+    if (folders && folders.length > 0) {
+      console.log(`La tarea ${id} pertenece a ${folders.length} carpeta(s). Verificando estado de las carpetas...`);
+      
+      // Para cada carpeta que contiene esta tarea, verificar el estado de todas sus tareas
+      for (const folder of folders) {
+        await checkFolderTasksStatus(folder._id);
+      }
+    }
 
     res
       .status(200)
@@ -272,6 +330,7 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
   try {
     const { taskId, subTaskId } = req.params;
     const { status } = req.body;
+    const { userId } = req.user;
     
     console.log('updateSubTaskStage - Parámetros recibidos:', { taskId, subTaskId, status });
     
@@ -283,6 +342,7 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
       return res.status(400).json({ status: false, message: 'ID de subtarea inválido o no proporcionado' });
     }
 
+    // Primero actualizamos el estado de la subtarea
     await Task.findOneAndUpdate(
       {
         _id: taskId,
@@ -294,6 +354,71 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
         },
       }
     );
+    
+    // Ahora verificamos si todas las subtareas están completadas
+    const task = await Task.findById(taskId);
+    console.log('Estado actual de la tarea:', { taskId, stage: task.stage, subTasksCount: task.subTasks.length });
+    
+    if (task && task.subTasks && task.subTasks.length > 0) {
+      const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
+      console.log('¿Todas las subtareas están completadas?', allSubTasksCompleted);
+      console.log('Estado de las subtareas:', task.subTasks.map(st => ({ id: st._id, isCompleted: st.isCompleted })));
+      
+      let newStage = task.stage;
+      let activityMessage = '';
+      
+      // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
+      if (allSubTasksCompleted) {
+        console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
+        newStage = 'completed';
+        activityMessage = "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas";
+      } 
+      // Si alguna subtarea no está completada y la tarea está marcada como completada, cambiar a 'in progress'
+      else if (task.stage === 'completed') {
+        console.log('La tarea está marcada como completada pero no todas las subtareas están completadas, cambiando a "in progress"');
+        newStage = 'in progress';
+        activityMessage = "La tarea ha sido marcada como en proceso automáticamente porque no todas las subtareas están completadas";
+      }
+      
+      // Solo actualizar si el estado ha cambiado
+      if (newStage !== task.stage) {
+        // Actualizar directamente en la base de datos para asegurar que se guarde correctamente
+        const updateResult = await Task.findByIdAndUpdate(
+          taskId,
+          { 
+            $set: { stage: newStage },
+            $push: { 
+              activities: {
+                $each: [{
+                  type: newStage === 'completed' ? "completed" : "in progress",
+                  activity: activityMessage,
+                  by: userId,
+                  date: new Date()
+                }],
+                $position: 0
+              }
+            }
+          },
+          { new: true }
+        );
+        
+        console.log(`Tarea actualizada a estado "${newStage}"`, updateResult ? 'exitosamente' : 'falló');
+        
+        // Buscar si la tarea pertenece a alguna carpeta y actualizar el estado de la carpeta si es necesario
+        const folders = await Folder.find({ tasks: taskId });
+        
+        if (folders && folders.length > 0) {
+          console.log(`La tarea ${taskId} pertenece a ${folders.length} carpeta(s). Verificando estado de las carpetas...`);
+          
+          // Para cada carpeta que contiene esta tarea, verificar el estado de todas sus tareas
+          for (const folder of folders) {
+            await checkFolderTasksStatus(folder._id);
+          }
+        }
+      } else {
+        console.log(`No se requiere cambio de estado, la tarea principal sigue en estado: ${task.stage}`);
+      }
+    }
 
     res.status(200).json({
       status: true,
@@ -310,6 +435,7 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
 const createSubTask = asyncHandler(async (req, res) => {
   const { title, tag, date, file } = req.body;
   const { id } = req.params;
+  const { userId } = req.user;
 
   try {
     const newSubTask = {
@@ -318,6 +444,7 @@ const createSubTask = asyncHandler(async (req, res) => {
       tag,
       isCompleted: false,
       assets: file ? [file] : [],
+      fileStatuses: {} // Inicializar fileStatuses como un objeto vacío
     };
 
     const task = await Task.findById(id);
@@ -328,8 +455,74 @@ const createSubTask = asyncHandler(async (req, res) => {
     if (file && !task.assets.includes(file)) {
       task.assets.push(file);
     }
-
+    
+    // Guardar la tarea con la nueva subtarea
     await task.save();
+    
+    // Verificar el estado de la tarea después de agregar la nueva subtarea
+    let newStage = task.stage;
+    let activityMessage = '';
+    let activityType = '';
+    let needsUpdate = false;
+    
+    // Si la tarea está marcada como completada y se agrega una nueva subtarea (que no está completada),
+    // cambiar el estado de la tarea a 'in progress'
+    if (task.stage === 'completed') {
+      console.log('La tarea está marcada como completada pero se ha agregado una nueva subtarea, cambiando a "in progress"');
+      newStage = 'in progress';
+      activityMessage = "La tarea ha sido marcada como en proceso automáticamente porque se ha agregado una nueva subtarea";
+      activityType = "in progress";
+      needsUpdate = true;
+    }
+    // Verificar si todas las subtareas están completadas (aunque es poco probable al crear una nueva)
+    else if (task.subTasks.length > 1) { // Si hay más de una subtarea (incluyendo la recién creada)
+      const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
+      
+      // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
+      if (allSubTasksCompleted) {
+        console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
+        newStage = 'completed';
+        activityMessage = "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas";
+        activityType = "completed";
+        needsUpdate = true;
+      }
+    }
+    
+    // Solo actualizar si el estado ha cambiado
+    if (needsUpdate) {
+      // Crear una actividad para registrar el cambio de estado de la tarea
+       const activity = {
+         type: activityType === 'completed' ? 'completed' : 'in progress',
+         activity: activityMessage,
+         by: userId,
+         date: new Date()
+       };
+      
+      // Actualizar la tarea directamente con findByIdAndUpdate
+      const updatedTask = await Task.findByIdAndUpdate(
+        id,
+        {
+          stage: newStage,
+          $push: { activities: { $each: [activity], $position: 0 } }
+        },
+        { new: true }
+      );
+      
+      // Buscar si la tarea pertenece a alguna carpeta y actualizar el estado de la carpeta si es necesario
+      const folders = await Folder.find({ tasks: id });
+      
+      if (folders && folders.length > 0) {
+        console.log(`La tarea ${id} pertenece a ${folders.length} carpeta(s). Verificando estado de las carpetas...`);
+        
+        // Para cada carpeta que contiene esta tarea, verificar el estado de todas sus tareas
+        for (const folder of folders) {
+          await checkFolderTasksStatus(folder._id);
+        }
+      }
+      
+      console.log(`Tarea principal actualizada a "${newStage}" con findByIdAndUpdate`);
+    }
+    
 
     res
       .status(200)
@@ -410,6 +603,15 @@ const postTaskActivity = asyncHandler(async (req, res) => {
 
   try {
     const task = await Task.findById(id);
+    
+    // Verificar que el tipo de actividad sea válido según el enum del modelo
+    // IMPORTANTE: "updated" NO es un tipo válido y causará un error de validación
+    if (!VALID_ACTIVITY_TYPES.includes(type)) {
+      return res.status(400).json({ 
+        status: false, 
+        message: `Tipo de actividad '${type}' no válido. Los tipos válidos son: ${VALID_ACTIVITY_TYPES.join(', ')}` 
+      });
+    }
 
     const data = {
       type,
@@ -673,10 +875,10 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     }
 
     // Verificar que el estado sea válido
-    if (!['pending', 'approved', 'rejected'].includes(status)) {
+    if (!VALID_FILE_STATUSES.includes(status)) {
       return res.status(400).json({ 
         status: false, 
-        message: "Estado no válido. Debe ser 'pending', 'approved' o 'rejected'." 
+        message: `Estado no válido. Debe ser uno de los siguientes: ${VALID_FILE_STATUSES.join(', ')}.` 
       });
     }
 
@@ -719,13 +921,13 @@ const updateFileStatus = asyncHandler(async (req, res) => {
 
     let statusText = "";
     switch (status) {
-      case "pending":
+      case FILE_STATUSES.PENDING:
         statusText = "en proceso";
         break;
-      case "approved":
+      case FILE_STATUSES.APPROVED:
         statusText = "aprobado";
         break;
-      case "rejected":
+      case FILE_STATUSES.REJECTED:
         statusText = "rechazado";
         break;
     }
@@ -734,7 +936,7 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     
     // Crear una nueva actividad
     const newActivity = {
-      type: "file_status_changed",
+      type: ACTIVITY_TYPES.FILE_STATUS_CHANGED, // Usando la constante para asegurar que el tipo sea válido
       activity: activityText,
       file: fileUrl,
       status: status,
@@ -746,18 +948,18 @@ const updateFileStatus = asyncHandler(async (req, res) => {
     task.activities.unshift(newActivity);
 
     // Actualizar el estado de la tarea según el estado del archivo
-    if (status === "approved" && task.stage !== "completed") {
-      task.stage = "completed";
-    } else if ((status === "rejected" || status === "pending") && task.stage === "completed") {
-      task.stage = "in progress";
+    if (status === FILE_STATUSES.APPROVED && task.stage !== TASK_STAGES.COMPLETED) {
+      task.stage = TASK_STAGES.COMPLETED;
+    } else if ((status === FILE_STATUSES.REJECTED || status === FILE_STATUSES.PENDING) && task.stage === TASK_STAGES.COMPLETED) {
+      task.stage = TASK_STAGES.IN_PROGRESS;
     }
     
     // Verificar si todos los archivos están aprobados
-    if (status === "approved") {
+    if (status === FILE_STATUSES.APPROVED) {
       const { allApproved } = checkFilesStatus(task.assets, task.fileStatuses);
       
       if (allApproved) {
-        task.stage = "completed";
+        task.stage = TASK_STAGES.COMPLETED;
         console.log('Tarea marcada como completada');
       }
     }
@@ -814,10 +1016,10 @@ const updateSubTaskFileStatus = asyncHandler(async (req, res) => {
     }
 
     // Verificar que el estado sea válido
-    if (!['pending', 'approved', 'rejected'].includes(status)) {
+    if (!VALID_FILE_STATUSES.includes(status)) {
       return res.status(400).json({ 
         status: false, 
-        message: "Estado no válido. Debe ser 'pending', 'approved' o 'rejected'." 
+        message: `Estado no válido. Debe ser uno de los siguientes: ${VALID_FILE_STATUSES.join(', ')}.` 
       });
     }
 
@@ -875,22 +1077,23 @@ const updateSubTaskFileStatus = asyncHandler(async (req, res) => {
 
     let statusText = "";
     switch (status) {
-      case "pending":
+      case FILE_STATUSES.PENDING:
         statusText = "en proceso";
         break;
-      case "approved":
+      case FILE_STATUSES.APPROVED:
         statusText = "aprobado";
         break;
-      case "rejected":
+      case FILE_STATUSES.REJECTED:
         statusText = "rechazado";
         break;
     }
 
     const activityText = `El archivo ${fileUrl.split('/').pop()} de la sub-tarea "${subTask.title}" ha sido marcado como ${statusText}`;
     
-    // Crear una nueva actividad
+    // Crear una nueva actividad con un tipo válido según el enum del modelo
+    // IMPORTANTE: "updated" NO es un tipo válido y causará un error de validación
     const newActivity = {
-      type: "file_status_changed",
+      type: ACTIVITY_TYPES.FILE_STATUS_CHANGED, // Usando la constante para asegurar que el tipo sea válido
       activity: activityText,
       file: fileUrl,
       status: status,
@@ -919,11 +1122,40 @@ const updateSubTaskFileStatus = asyncHandler(async (req, res) => {
       console.log('No quedan archivos en la subtarea, manteniendo el estado actual:', subTask.isCompleted);
     }
     
+    // Verificar si todas las subtareas están completadas
+    const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
+    
     // Marcar el documento como modificado para asegurar que Mongoose guarde los cambios
     task.markModified('subTasks');
     
     // Guardar la tarea con la nueva actividad y el estado actualizado
     await task.save();
+    
+    // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
+    // Usando findByIdAndUpdate para asegurar que se actualice correctamente
+    if (allSubTasksCompleted && task.subTasks.length > 0) {
+      console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
+      
+      // Crear una actividad para registrar el cambio de estado de la tarea
+      const completionActivity = {
+        type: ACTIVITY_TYPES.COMPLETED,
+        activity: "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas",
+        by: userId,
+        date: new Date()
+      };
+      
+      // Actualizar la tarea directamente con findByIdAndUpdate
+      await Task.findByIdAndUpdate(
+        taskId,
+        {
+          stage: TASK_STAGES.COMPLETED,
+          $push: { activities: { $each: [completionActivity], $position: 0 } }
+        },
+        { new: true }
+      );
+      
+      console.log(`Tarea principal actualizada a "${TASK_STAGES.COMPLETED}" con findByIdAndUpdate`);
+    }
 
     // Respuesta rápida sin poblar toda la tarea para mejorar el rendimiento
     res.status(200).json({ 
@@ -994,7 +1226,7 @@ const removeSubTaskFile = asyncHandler(async (req, res) => {
     const activityText = `El archivo ${fileUrl.split('/').pop()} ha sido eliminado de la sub-tarea "${subTask.title}"`;
     
     const newActivity = {
-      type: "file_removed",
+      type: ACTIVITY_TYPES.FILE_REMOVED, // Usando la constante para asegurar que el tipo sea válido
       activity: activityText,
       file: fileUrl,
       by: userId,
@@ -1004,11 +1236,58 @@ const removeSubTaskFile = asyncHandler(async (req, res) => {
     // Añadir la nueva actividad al principio del array
     task.activities.unshift(newActivity);
 
+    // Actualizar el estado de la subtarea según el estado de sus archivos restantes
+    if (subTask.assets && subTask.assets.length > 0) {
+      const { hasPendingOrRejected, allApproved } = checkFilesStatus(subTask.assets, subTask.fileStatuses);
+      
+      // Si hay archivos pendientes o rechazados, marcar la subtarea como no completada
+      if (hasPendingOrRejected) {
+        subTask.isCompleted = false;
+        console.log('Subtarea marcada como no completada porque hay archivos pendientes o rechazados');
+      } else {
+        // Si todos los archivos están aprobados, marcar la subtarea como completada
+        subTask.isCompleted = true;
+        console.log('Subtarea marcada como completada automáticamente porque todos los archivos restantes están aprobados');
+      }
+    } else if (subTask.assets.length === 0) {
+      // Si no quedan archivos, mantener el estado actual de la subtarea
+      console.log('No quedan archivos en la subtarea, manteniendo el estado actual:', subTask.isCompleted);
+    }
+    
+    // Verificar si todas las subtareas están completadas
+    const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
+    
     // Marcar el documento como modificado para asegurar que Mongoose guarde los cambios
     task.markModified('subTasks');
     
     // Guardar la tarea con la nueva actividad y el estado actualizado
     await task.save();
+    
+    // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
+    // Usando findByIdAndUpdate para asegurar que se actualice correctamente
+    if (allSubTasksCompleted && task.subTasks.length > 0) {
+      console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
+      
+      // Crear una actividad para registrar el cambio de estado de la tarea
+      const completionActivity = {
+        type: ACTIVITY_TYPES.COMPLETED,
+        activity: "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas",
+        by: userId,
+        date: new Date()
+      };
+      
+      // Actualizar la tarea directamente con findByIdAndUpdate
+      await Task.findByIdAndUpdate(
+        taskId,
+        {
+          stage: TASK_STAGES.COMPLETED,
+          $push: { activities: { $each: [completionActivity], $position: 0 } }
+        },
+        { new: true }
+      );
+      
+      console.log(`Tarea principal actualizada a "${TASK_STAGES.COMPLETED}" con findByIdAndUpdate`);
+    }
 
     // Respuesta rápida sin poblar toda la tarea para mejorar el rendimiento
     res.status(200).json({ 
@@ -1041,4 +1320,5 @@ export {
   addFileToSubTask,
   removeSubTaskFile
 };
+      
       
