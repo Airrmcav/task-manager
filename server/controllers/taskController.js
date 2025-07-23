@@ -6,6 +6,7 @@ import { VALID_ACTIVITY_TYPES, ACTIVITY_TYPES, VALID_FILE_STATUSES, FILE_STATUSE
 import Folder from "../models/folderModel.js";
 import fs from 'fs';
 import path from 'path';
+import mongoose from 'mongoose';
 
 // Función auxiliar para verificar si todas las tareas de una carpeta están completadas
 const checkFolderTasksStatus = async (folderId) => {
@@ -329,10 +330,10 @@ const updateTaskStage = asyncHandler(async (req, res) => {
 const updateSubTaskStage = asyncHandler(async (req, res) => {
   try {
     const { taskId, subTaskId } = req.params;
-    const { status } = req.body;
+    const { status, title, date, tag } = req.body;
     const { userId } = req.user;
     
-    console.log('updateSubTaskStage - Parámetros recibidos:', { taskId, subTaskId, status });
+    console.log('updateSubTaskStage - Parámetros recibidos:', { taskId, subTaskId, status, title, date, tag });
     
     if (!taskId || taskId === 'undefined') {
       return res.status(400).json({ status: false, message: 'ID de tarea inválido o no proporcionado' });
@@ -342,89 +343,121 @@ const updateSubTaskStage = asyncHandler(async (req, res) => {
       return res.status(400).json({ status: false, message: 'ID de subtarea inválido o no proporcionado' });
     }
 
-    // Primero actualizamos el estado de la subtarea
+    // Preparamos los campos a actualizar
+    const updateFields = {};
+    
+    // Si se proporciona status, actualizamos el estado de completado
+    if (status !== undefined) {
+      updateFields["subTasks.$.isCompleted"] = status;
+    }
+    
+    // Si se proporcionan campos de edición, los actualizamos
+    if (title) updateFields["subTasks.$.title"] = title;
+    if (date) updateFields["subTasks.$.date"] = date;
+    if (tag) updateFields["subTasks.$.tag"] = tag;
+    
+    // Actualizamos la subtarea con todos los campos proporcionados
     await Task.findOneAndUpdate(
       {
         _id: taskId,
         "subTasks._id": subTaskId,
       },
       {
-        $set: {
-          "subTasks.$.isCompleted": status,
-        },
+        $set: updateFields,
       }
     );
     
-    // Ahora verificamos si todas las subtareas están completadas
-    const task = await Task.findById(taskId);
-    console.log('Estado actual de la tarea:', { taskId, stage: task.stage, subTasksCount: task.subTasks.length });
-    
-    if (task && task.subTasks && task.subTasks.length > 0) {
-      const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
-      console.log('¿Todas las subtareas están completadas?', allSubTasksCompleted);
-      console.log('Estado de las subtareas:', task.subTasks.map(st => ({ id: st._id, isCompleted: st.isCompleted })));
+    // Solo verificamos el estado de las subtareas si se está actualizando el status
+    if (status !== undefined) {
+      // Ahora verificamos si todas las subtareas están completadas
+      const task = await Task.findById(taskId);
+      console.log('Estado actual de la tarea:', { taskId, stage: task.stage, subTasksCount: task.subTasks.length });
       
-      let newStage = task.stage;
-      let activityMessage = '';
-      
-      // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
-      if (allSubTasksCompleted) {
-        console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
-        newStage = 'completed';
-        activityMessage = "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas";
-      } 
-      // Si alguna subtarea no está completada y la tarea está marcada como completada, cambiar a 'in progress'
-      else if (task.stage === 'completed') {
-        console.log('La tarea está marcada como completada pero no todas las subtareas están completadas, cambiando a "in progress"');
-        newStage = 'in progress';
-        activityMessage = "La tarea ha sido marcada como en proceso automáticamente porque no todas las subtareas están completadas";
-      }
-      
-      // Solo actualizar si el estado ha cambiado
-      if (newStage !== task.stage) {
-        // Actualizar directamente en la base de datos para asegurar que se guarde correctamente
-        const updateResult = await Task.findByIdAndUpdate(
-          taskId,
-          { 
-            $set: { stage: newStage },
-            $push: { 
-              activities: {
-                $each: [{
-                  type: newStage === 'completed' ? "completed" : "in progress",
-                  activity: activityMessage,
-                  by: userId,
-                  date: new Date()
-                }],
-                $position: 0
-              }
-            }
-          },
-          { new: true }
-        );
+      if (task && task.subTasks && task.subTasks.length > 0) {
+        const allSubTasksCompleted = task.subTasks.every(st => st.isCompleted === true);
+        console.log('¿Todas las subtareas están completadas?', allSubTasksCompleted);
+        console.log('Estado de las subtareas:', task.subTasks.map(st => ({ id: st._id, isCompleted: st.isCompleted })));
         
-        console.log(`Tarea actualizada a estado "${newStage}"`, updateResult ? 'exitosamente' : 'falló');
+        let newStage = task.stage;
+        let activityMessage = '';
         
-        // Buscar si la tarea pertenece a alguna carpeta y actualizar el estado de la carpeta si es necesario
-        const folders = await Folder.find({ tasks: taskId });
-        
-        if (folders && folders.length > 0) {
-          console.log(`La tarea ${taskId} pertenece a ${folders.length} carpeta(s). Verificando estado de las carpetas...`);
-          
-          // Para cada carpeta que contiene esta tarea, verificar el estado de todas sus tareas
-          for (const folder of folders) {
-            await checkFolderTasksStatus(folder._id);
-          }
+        // Si todas las subtareas están completadas, actualizar el estado de la tarea principal a 'completed'
+        if (allSubTasksCompleted) {
+          console.log('Todas las subtareas están completadas, actualizando estado de la tarea principal a "completed"');
+          newStage = 'completed';
+          activityMessage = "La tarea ha sido marcada como completada automáticamente porque todas las subtareas están completadas";
+        } 
+        // Si alguna subtarea no está completada y la tarea está marcada como completada, cambiar a 'in progress'
+        else if (task.stage === 'completed') {
+          console.log('La tarea está marcada como completada pero no todas las subtareas están completadas, cambiando a "in progress"');
+          newStage = 'in progress';
+          activityMessage = "La tarea ha sido marcada como en proceso automáticamente porque no todas las subtareas están completadas";
         }
-      } else {
-        console.log(`No se requiere cambio de estado, la tarea principal sigue en estado: ${task.stage}`);
+        
+        // Solo actualizar si el estado ha cambiado
+        if (newStage !== task.stage) {
+          // Actualizar directamente en la base de datos para asegurar que se guarde correctamente
+          const updateResult = await Task.findByIdAndUpdate(
+            taskId,
+            { 
+              $set: { stage: newStage },
+              $push: { 
+                activities: {
+                  $each: [{
+                    type: newStage === 'completed' ? "completed" : "in progress",
+                    activity: activityMessage,
+                    by: userId,
+                    date: new Date()
+                  }],
+                  $position: 0
+                }
+              }
+            },
+            { new: true }
+          );
+          
+          console.log(`Tarea actualizada a estado "${newStage}"`, updateResult ? 'exitosamente' : 'falló');
+          
+          // Buscar si la tarea pertenece a alguna carpeta y actualizar el estado de la carpeta si es necesario
+          const folders = await Folder.find({ tasks: taskId });
+          
+          if (folders && folders.length > 0) {
+            console.log(`La tarea ${taskId} pertenece a ${folders.length} carpeta(s). Verificando estado de las carpetas...`);
+            
+            // Para cada carpeta que contiene esta tarea, verificar el estado de todas sus tareas
+            for (const folder of folders) {
+              await checkFolderTasksStatus(folder._id);
+            }
+          }
+        } else {
+          console.log(`No se requiere cambio de estado, la tarea principal sigue en estado: ${task.stage}`);
+        }
       }
     }
 
+    // Determinar el mensaje de respuesta según los campos actualizados
+    let message = "";
+    
+    // Verificar qué campos se actualizaron para mostrar el mensaje adecuado
+    const fieldsUpdated = [];
+    if (title) fieldsUpdated.push("título");
+    if (date) fieldsUpdated.push("fecha");
+    if (tag) fieldsUpdated.push("etiqueta");
+    
+    if (fieldsUpdated.length > 0) {
+      message = `Subtarea actualizada correctamente: ${fieldsUpdated.join(", ")} actualizado(s)`;
+      console.log('Campos actualizados:', fieldsUpdated);
+    } else if (status !== undefined) {
+      message = status
+        ? "Tarea marcada como completada"
+        : "Tarea marcada como incompleta";
+    } else {
+      message = "No se realizaron cambios en la subtarea";
+    }
+    
     res.status(200).json({
       status: true,
-      message: status
-        ? "Tarea marcada como completada"
-        : "Tarea marcada como incompleta",
+      message: message,
     });
   } catch (error) {
     console.log(error);
@@ -860,8 +893,8 @@ const dashboardStatistics = asyncHandler(async (req, res) => {
 // Actualizar el estado de un archivo en una tarea
 const updateFileStatus = asyncHandler(async (req, res) => {
   try {
-    console.log('Datos recibidos en updateFileStatus:', req.body);
-    console.log('Usuario en la solicitud:', req.user);
+    // console.log('Datos recibidos en updateFileStatus:', req.body);
+    // console.log('Usuario en la solicitud:', req.user);
     
     const { taskId, fileUrl, status } = req.body;
     const { userId } = req.user;
@@ -1302,24 +1335,94 @@ const removeSubTaskFile = asyncHandler(async (req, res) => {
 });
 
 // Exportar todas las funciones del controlador
+// Eliminar una subtarea completa
+const deleteSubTask = asyncHandler(async (req, res) => {
+  try {
+    const { taskId, subTaskId } = req.body;
+
+    // Validar que se proporcionen los IDs necesarios
+    if (!taskId || !subTaskId) {
+      res.status(400);
+      throw new Error('Se requieren taskId y subTaskId para eliminar una subtarea');
+    }
+
+    // Validar que los IDs sean válidos
+    if (!mongoose.Types.ObjectId.isValid(taskId) || !mongoose.Types.ObjectId.isValid(subTaskId)) {
+      res.status(400);
+      throw new Error(`IDs de tarea o subtarea no válidos. taskId: ${taskId}, subTaskId: ${subTaskId}`);
+    }
+    
+    console.log('Eliminando subtarea con taskId:', taskId, 'y subTaskId:', subTaskId);
+
+    // Buscar la tarea
+    const task = await Task.findById(taskId);
+    if (!task) {
+      res.status(404);
+      throw new Error('Tarea no encontrada');
+    }
+
+    // Verificar si la subtarea existe
+    const subTaskIndex = task.subTasks.findIndex(st => st._id.toString() === subTaskId);
+    if (subTaskIndex === -1) {
+      res.status(404);
+      throw new Error('Subtarea no encontrada');
+    }
+
+    // Obtener el título antes de eliminar la subtarea
+    const subTaskTitle = task.subTasks[subTaskIndex].title;
+    
+    // Eliminar la subtarea del array
+    task.subTasks.splice(subTaskIndex, 1);
+
+    // Registrar la actividad
+    task.activities.push({
+      type: ACTIVITY_TYPES.SUBTASK_DELETED,
+      user: req.user._id,
+      timestamp: new Date(),
+      details: `Subtarea "${subTaskTitle}" eliminada`
+    });
+
+    // Guardar los cambios
+    await task.save();
+
+    // Verificar si la tarea pertenece a alguna carpeta y actualizar su estado si es necesario
+    const folders = await Folder.find({ tasks: taskId });
+    if (folders.length > 0) {
+      for (const folder of folders) {
+        await checkFolderTasksStatus(folder._id);
+      }
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Subtarea eliminada correctamente',
+      task
+    });
+  } catch (error) {
+    console.error('Error al eliminar la subtarea:', error);
+    res.status(res.statusCode === 200 ? 500 : res.statusCode).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
 export {
   createTask,
   getTasks,
   getTask,
   updateTask,
-  updateTaskStage,
-  createSubTask,
-  updateSubTaskStage,
-  postTaskActivity,
-  dashboardStatistics,
   trashTask,
   deleteRestoreTask,
   duplicateTask,
+  postTaskActivity,
+  dashboardStatistics,
+  createSubTask,
+  updateTaskStage,
+  updateSubTaskStage,
   updateFileStatus,
   updateSubTaskFileStatus,
   addFileToSubTask,
-  removeSubTaskFile
+  removeSubTaskFile,
+  deleteSubTask
 };
-      
-      
-      
