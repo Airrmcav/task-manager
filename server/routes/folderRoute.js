@@ -8,8 +8,10 @@ import {
   deleteRestoreFolder,
   addTaskToFolder,
   removeTaskFromFolder,
+  uploadFolderPdf
 } from "../controllers/folderController.js";
 import { isAdminRoute, protectRoute } from "../middleware/authMiddleware.js";
+import { upload } from "../middleware/uploadMiddleware.js";
 
 const router = express.Router();
 
@@ -22,6 +24,9 @@ router.put("/update/:id", protectRoute, isAdminRoute, updateFolder);
 router.put("/add-task/:id", protectRoute, isAdminRoute, addTaskToFolder);
 router.put("/remove-task/:id", protectRoute, isAdminRoute, removeTaskFromFolder);
 router.put("/:id", protectRoute, isAdminRoute, trashFolder);
+
+// Ruta para subir PDF a una carpeta
+router.post("/upload-pdf/:id", protectRoute, isAdminRoute, upload.single('pdf'), uploadFolderPdf);
 
 router.delete(
   "/delete-restore/:id",
