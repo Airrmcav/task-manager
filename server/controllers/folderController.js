@@ -2,6 +2,9 @@ import asyncHandler from "express-async-handler";
 import Folder from "../models/folderModel.js";
 import Task from "../models/taskModel.js";
 import mongoose from "mongoose";
+import fs from 'fs';
+import path from 'path';
+import { sanitizeFolderName } from "../middleware/uploadMiddleware.js";
 
 // Función auxiliar para verificar si todas las tareas de una carpeta están completadas
 const checkFolderTasksStatus = async (folderId) => {
@@ -158,7 +161,7 @@ const getFolder = asyncHandler(async (req, res) => {
 const updateFolder = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, date, company, area, team } = req.body;
+    const { name, date, company, area, team, pdfPath } = req.body;
 
     const folder = await Folder.findById(id);
 
@@ -185,6 +188,10 @@ const updateFolder = asyncHandler(async (req, res) => {
     folder.company = company || folder.company;
     folder.area = area || folder.area;
     folder.team = team || folder.team;
+    // Actualizar pdfPath solo si se proporciona
+    if (pdfPath !== undefined) {
+      folder.pdfPath = pdfPath;
+    }
 
     const updatedFolder = await folder.save();
 
@@ -337,6 +344,49 @@ const removeTaskFromFolder = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Upload PDF to folder
+// @route   POST /api/folder/upload-pdf/:id
+// @access  Private/Admin
+const uploadFolderPdf = asyncHandler(async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: false, message: 'No se proporcionó ningún archivo PDF' });
+    }
+
+    const folderId = req.params.id;
+    const folder = await Folder.findById(folderId);
+
+    if (!folder) {
+      return res.status(404).json({ status: false, message: 'Carpeta no encontrada' });
+    }
+
+    // Crear directorio para la carpeta si no existe
+    const folderName = sanitizeFolderName(folder.name);
+    const uploadPath = path.join(process.cwd(), 'uploads', folderName);
+    
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+
+    // Construir la ruta del archivo
+    const pdfPath = `/uploads/${folderName}/${req.file.filename}`;
+    
+    // Actualizar la carpeta con la ruta del PDF
+    folder.pdfPath = pdfPath;
+    await folder.save();
+
+    res.status(200).json({
+      status: true,
+      message: 'PDF subido exitosamente',
+      pdfPath,
+      folder
+    });
+  } catch (error) {
+    console.error('Error al subir PDF:', error);
+    res.status(500).json({ status: false, message: error.message });
+  }
+});
+
 export {
   createFolder,
   getFolders,
@@ -346,4 +396,5 @@ export {
   deleteRestoreFolder,
   addTaskToFolder,
   removeTaskFromFolder,
+  uploadFolderPdf
 };
