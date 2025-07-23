@@ -9,6 +9,7 @@ const folderSchema = new Schema(
     team: [{ type: Schema.Types.ObjectId, ref: "User" }],
     tasks: [{ type: Schema.Types.ObjectId, ref: "Task" }],
     isTrashed: { type: Boolean, default: false },
+    pdfPath: { type: String, default: null },
     status: {
       type: String,
       default: "in progress",
