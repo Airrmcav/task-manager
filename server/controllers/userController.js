@@ -274,4 +274,3 @@ export {
   registerUser,
   updateUserProfile,
 };
-
