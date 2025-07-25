@@ -6,6 +6,7 @@ const folderSchema = new Schema(
     date: { type: Date, default: Date.now },
     company: { type: String, default: "M&CAV" },
     area: { type: String, default: "Sistemas" },
+    description: { type: String, default: "" },
     team: [{ type: Schema.Types.ObjectId, ref: "User" }],
     tasks: [{ type: Schema.Types.ObjectId, ref: "Task" }],
     isTrashed: { type: Boolean, default: false },
