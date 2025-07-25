@@ -56,7 +56,7 @@ const checkFolderTasksStatus = async (folderId) => {
 // @access  Private/Admin
 const createFolder = asyncHandler(async (req, res) => {
   try {
-    const { name, date, company, area, team } = req.body;
+    const { name, date, company, area, team, description } = req.body;
     
     // Asegurarnos de que la fecha se maneje correctamente
     let folderDate;
@@ -78,6 +78,7 @@ const createFolder = asyncHandler(async (req, res) => {
       date: folderDate,
       company,
       area,
+      description,
       team: team || [],
     };
     
@@ -161,7 +162,7 @@ const getFolder = asyncHandler(async (req, res) => {
 const updateFolder = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, date, company, area, team, pdfPath } = req.body;
+    const { name, date, company, area, team, pdfPath, description } = req.body;
 
     const folder = await Folder.findById(id);
 
@@ -187,6 +188,7 @@ const updateFolder = asyncHandler(async (req, res) => {
     folder.date = folderDate;
     folder.company = company || folder.company;
     folder.area = area || folder.area;
+    folder.description = description !== undefined ? description : folder.description;
     folder.team = team || folder.team;
     // Actualizar pdfPath solo si se proporciona
     if (pdfPath !== undefined) {
